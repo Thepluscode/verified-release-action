@@ -94,7 +94,7 @@ class Usage(Exception):
     """Caller error, kept distinct from a release verdict."""
 
 
-def approvals(package, repo, approvers, tier, gh_json=None, review_sha=None):
+def approvals(package, repo, approvers, tier, gh_json=None, pr_number=None):
     """Return (ok, lines). Every Tier C NOT APPLICABLE in `package` must have been approved by an
     allowed GitHub login on a pull request that contains the package's commit. The reviewer NAME
     written in the contract is prose; this is the authenticated version of it (founder 2026-11-03).
@@ -110,10 +110,20 @@ def approvals(package, repo, approvers, tier, gh_json=None, review_sha=None):
     if tier != "C" or not exempt:
         return True, [f"  approvals          not required (tier {tier}, {len(exempt)} exemption(s))"]
     # On a pull_request event the judged checkout is GitHub's synthetic merge commit, which no
-    # review ever carries; reviews attach to the PR head. `review_sha` is that head (hosted run
-    # 2026-11-03). On push events it is the package sha itself.
-    sha = review_sha or package.get("sha", "")
-    pulls = gh_json(f"repos/{repo}/commits/{sha}/pulls") or []
+    # review carries; reviews attach to the PR head. The caller names the PR (from the event);
+    # the binding is checked HERE, not trusted: the package sha must be that PR's head or its
+    # merge commit, and only that PR's reviews of its head count (Codex 2026-11-03: a free
+    # review-sha let an unrelated PR's approval count). On push events: PRs containing the sha.
+    sha = package.get("sha", "")
+    if pr_number:
+        pr = gh_json(f"repos/{repo}/pulls/{pr_number}") or {}
+        head = (pr.get("head") or {}).get("sha", "")
+        if not head or sha not in (head, pr.get("merge_commit_sha")):
+            return False, [f"  approvals          FAIL: PR #{pr_number} is not bound to the judged commit {sha[:12]} "
+                           f"(head {head[:12] or '?'}, merge {str(pr.get('merge_commit_sha'))[:12]})"]
+        sha, pulls = head, [{"number": pr_number}]
+    else:
+        pulls = gh_json(f"repos/{repo}/commits/{sha}/pulls") or []
     approved_by = set()
     for pr in pulls:
         latest = {}  # a reviewer's LATEST review is the one that counts (Codex 2026-11-03:
@@ -341,10 +351,15 @@ def selftest():
     other = lambda path: [{"number": 7}] if path.endswith("/pulls") else [{"state": "APPROVED", "user": {"login": "Thepluscode"}, "commit_id": "b" * 40}]
     ok(approvals(pkg, "o/r", ["Thepluscode"], "C", other)[0] is False, "an approval for a different commit counted")
     ok(approvals(pkg, "o/r", ["", "Thepluscode"], "C", seq("APPROVED"))[0] is True, "an empty approver element broke a valid list")
-    head = lambda path: ([{"number": 7}] if path == "repos/o/r/commits/" + "c" * 40 + "/pulls" else [] if path.endswith("/pulls")
-                         else [{"state": "APPROVED", "user": {"login": "Thepluscode"}, "commit_id": "c" * 40}])
-    ok(approvals(pkg, "o/r", ["Thepluscode"], "C", head)[0] is False, "a merge-commit package matched a head-commit review")
-    ok(approvals(pkg, "o/r", ["Thepluscode"], "C", head, review_sha="c" * 40)[0] is True, "the PR head review was not found via review_sha")
+    def prs(path):  # PR 7: head c…, merge a… (= the package); PR 999: unrelated, approved
+        if path == "repos/o/r/pulls/7": return {"head": {"sha": "c" * 40}, "merge_commit_sha": "a" * 40}
+        if path == "repos/o/r/pulls/999": return {"head": {"sha": "d" * 40}, "merge_commit_sha": "e" * 40}
+        if path == "repos/o/r/pulls/7/reviews": return [{"state": "APPROVED", "user": {"login": "Thepluscode"}, "commit_id": "c" * 40}]
+        if path == "repos/o/r/pulls/999/reviews": return [{"state": "APPROVED", "user": {"login": "Thepluscode"}, "commit_id": "d" * 40}]
+        return []
+    ok(approvals(pkg, "o/r", ["Thepluscode"], "C", prs)[0] is False, "a merge-commit package matched a head review without a PR binding")
+    ok(approvals(pkg, "o/r", ["Thepluscode"], "C", prs, pr_number=7)[0] is True, "the bound PR's head approval was not accepted")
+    ok(approvals(pkg, "o/r", ["Thepluscode"], "C", prs, pr_number=999)[0] is False, "an unrelated PR's approval counted")
 
     # Evidence binds to one commit: a stale, mismatched or dirty package blocks.
     good = {c: "pass" for c in REQUIRED["C"]}
@@ -377,7 +392,7 @@ def main(argv=None):
     ap.add_argument("command", nargs="?", choices=("classify", "verify", "approvals"))
     ap.add_argument("--repo", help="approvals: owner/name on GitHub")
     ap.add_argument("--approvers", default="", help="approvals: comma-separated GitHub logins allowed to approve a tier C exemption")
-    ap.add_argument("--review-sha", default="", help="approvals: commit that reviews attach to (the PR head on pull_request events)")
+    ap.add_argument("--pr", default="", help="approvals: the pull request of a pull_request event; must be bound to the judged commit")
     ap.add_argument("--changed", nargs="*", default=[])
     ap.add_argument("--evidence", help="JSON file mapping check name to result")
     ap.add_argument("--package", help="evidence-package.json; binds the evidence to HEAD "
@@ -399,7 +414,7 @@ def main(argv=None):
                 package = json.load(fh)
             tier, _ = classify(args.changed)
             good, lines = approvals(package, args.repo, [a for a in args.approvers.split(",") if a], tier,
-                                    review_sha=args.review_sha or None)
+                                    pr_number=args.pr or None)
             print("\n".join(lines))
             return 0 if good else 1
         if args.command == "classify":
