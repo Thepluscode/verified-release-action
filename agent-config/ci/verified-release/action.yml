@@ -1,0 +1,55 @@
+name: Verified Engineering release gate
+description: >-
+  Runs the repository's docs/testing/release-contract.json with the shared runner and judges
+  the evidence with the shared gate (tools/release_evidence.py and tools/release_gate.py in
+  theplus-tech-knowledge — this action ships them, so no repository carries a copy).
+  Exit 0 = PASS, 1 = BLOCK, 2 = INSUFFICIENT_EVIDENCE. The evidence package is uploaded as a
+  workflow artifact bound to the exact commit. A deploy job that `needs` this job cannot start
+  on BLOCK or INSUFFICIENT_EVIDENCE.
+inputs:
+  timeout:
+    description: seconds per contract check
+    default: "900"
+  python:
+    description: python interpreter for the tools (not for the contract's own commands)
+    default: python3
+  approvers:
+    description: GitHub logins allowed to approve a Tier C NOT APPLICABLE exemption (PR review)
+    default: Thepluscode
+runs:
+  using: composite
+  steps:
+    - name: Run the release contract
+      shell: bash
+      run: |
+        set -o pipefail
+        KB="$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)"
+        OUT="$RUNNER_TEMP/verified-release"
+        "${{ inputs.python }}" "$KB/tools/release_evidence.py" run . --out "$OUT" --timeout "${{ inputs.timeout }}"
+        echo "OUT=$OUT" >> "$GITHUB_ENV"
+    - name: Judge the evidence (bound to this commit)
+      shell: bash
+      run: |
+        KB="$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)"
+        CHANGED=$("${{ inputs.python }}" -c "import json;print(' '.join(json.load(open('docs/testing/release-contract.json'))['changed']))")
+        set +e
+        "${{ inputs.python }}" "$KB/tools/release_gate.py" verify --changed $CHANGED --evidence "$OUT/evidence.json" --package "$OUT/evidence-package.json" | tee "$OUT/gate-verdict.txt"
+        rc=${PIPESTATUS[0]}
+        echo "verdict exit $rc (0 PASS · 1 BLOCK · 2 INSUFFICIENT_EVIDENCE)"
+        exit $rc
+    - name: Tier C exemptions need an approved pull-request review, not a name in a file
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        KB="$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)"
+        CHANGED=$("${{ inputs.python }}" -c "import json;print(' '.join(json.load(open('docs/testing/release-contract.json'))['changed']))")
+        "${{ inputs.python }}" "$KB/tools/release_gate.py" approvals --changed $CHANGED --package "$OUT/evidence-package.json" --repo "$GITHUB_REPOSITORY" --approvers "${{ inputs.approvers }}" | tee -a "$OUT/gate-verdict.txt"
+        exit ${PIPESTATUS[0]}
+    - name: Keep the evidence package even when the gate blocks
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: verified-release-${{ github.sha }}
+        path: ${{ env.OUT }}
+        if-no-files-found: error

@@ -1,0 +1,10 @@
+{
+  "canonical_repo": "Thepluscode/theplus-tech-knowledge",
+  "canonical_commit": "75b1227fd6e549268c5a9cf0e4ec6608b53d18e4",
+  "files": {
+    "agent-config/ci/verified-release/action.yml": "824b81b5bdc1647c6e6579c47cf974f0bde8d79d7c2f7ef3e91b3b23495396b7",
+    "agent-config/ci/verified-release/README.md": "2fc340fef37fd712d8f5da2a7d391d67e92b95b8ecb25858bacaa4e9b99c73f9",
+    "tools/release_gate.py": "f29c5650c929028c8bbb690cc51eda5628627e1fc5de5a02907b9144f5b1bcf3",
+    "tools/release_evidence.py": "70ea8481ecf0424998c3355df276ae91b7da207495d1c5116261164137a22d46"
+  }
+}
