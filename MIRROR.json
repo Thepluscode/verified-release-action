@@ -1,10 +1,10 @@
 {
   "canonical_repo": "Thepluscode/theplus-tech-knowledge",
-  "canonical_commit": "e292501e4f0f7bc272ff835f99b86c219cefa269",
+  "canonical_commit": "6b929251a341b59e8e52b72e3ee1846ba4c83cd8",
   "files": {
-    "agent-config/ci/verified-release/action.yml": "52c0ed2fad12062c2fb3ea899dd3710e56abfc3afcf2d99e0897eb95359dae86",
+    "agent-config/ci/verified-release/action.yml": "db49bcb1949682674268b10bb08a325fe44ff78480feadd669718ab7db9f1bc5",
     "agent-config/ci/verified-release/README.md": "c20d52b4effabf74db33d7696548606d6e7a82ad61492419658f49de4bfbd91f",
-    "tools/release_gate.py": "f29c5650c929028c8bbb690cc51eda5628627e1fc5de5a02907b9144f5b1bcf3",
+    "tools/release_gate.py": "3c37dbdf2de0fb0ef4ccab46b33380585ee1197ba42b93a6246de98eab36916d",
     "tools/release_evidence.py": "70ea8481ecf0424998c3355df276ae91b7da207495d1c5116261164137a22d46"
   }
 }

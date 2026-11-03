@@ -44,7 +44,7 @@ runs:
       run: |
         KB="$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)"
         CHANGED=$("${{ inputs.python }}" -c "import json;print(' '.join(json.load(open('docs/testing/release-contract.json'))['changed']))")
-        "${{ inputs.python }}" "$KB/tools/release_gate.py" approvals --changed $CHANGED --package "$OUT/evidence-package.json" --repo "$GITHUB_REPOSITORY" --approvers "${{ inputs.approvers }}" | tee -a "$OUT/gate-verdict.txt"
+        "${{ inputs.python }}" "$KB/tools/release_gate.py" approvals --changed $CHANGED --package "$OUT/evidence-package.json" --repo "$GITHUB_REPOSITORY" --approvers "${{ inputs.approvers }}" --review-sha "${{ github.event.pull_request.head.sha || github.sha }}" | tee -a "$OUT/gate-verdict.txt"
         exit ${PIPESTATUS[0]}
     - name: Keep the evidence package even when the gate blocks
       if: always()
