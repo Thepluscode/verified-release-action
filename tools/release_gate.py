@@ -132,7 +132,9 @@ def approvals(package, repo, approvers, tier, gh_json=None, pr_number=None):
             latest[rv.get("user", {}).get("login")] = rv
         for login, rv in latest.items():
             # and it must approve THIS commit when GitHub says which commit it reviewed
-            if rv.get("state") == "APPROVED" and (not rv.get("commit_id") or rv["commit_id"] == sha):
+            # commit_id is required: an approval that does not say which commit it approved is no
+            # approval of this one (Codex 2026-11-03; fail closed on a malformed response).
+            if rv.get("state") == "APPROVED" and rv.get("commit_id") == sha:
                 approved_by.add(login)
     ok_logins = sorted(approved_by & set(a for a in approvers if a))
     if ok_logins:
@@ -338,18 +340,20 @@ def selftest():
 
     # Authenticated exemptions: a reviewer name in the contract is not an approval.
     pkg = {"sha": "a" * 40, "evidence": {**{c: "pass" for c in REQUIRED["C"]}, "recovery": "not_applicable: stateless; reviewed_by: founder"}}
-    fake = lambda approved: (lambda path: [{"number": 7}] if path.endswith("/pulls") else [{"state": "APPROVED", "user": {"login": approved}}] if approved else [])
+    fake = lambda approved: (lambda path: [{"number": 7}] if path.endswith("/pulls") else [{"state": "APPROVED", "user": {"login": approved}, "commit_id": "a" * 40}] if approved else [])
     ok(approvals(pkg, "o/r", ["Thepluscode"], "C", fake("Thepluscode"))[0] is True, "an approved tier C exemption was refused")
     ok(approvals(pkg, "o/r", ["Thepluscode"], "C", fake("someone-else"))[0] is False, "an exemption approved by a non-allowed login passed")
     ok(approvals(pkg, "o/r", ["Thepluscode"], "C", fake(None))[0] is False, "an exemption with no PR approval passed")
     ok(approvals(pkg, "o/r", ["Thepluscode"], "B", fake(None))[0] is True, "a tier B exemption demanded a PR approval")
     seq = lambda *states: (lambda path: [{"number": 7}] if path.endswith("/pulls") else
-                           [{"state": st, "user": {"login": "Thepluscode"}} for st in states])
+                           [{"state": st, "user": {"login": "Thepluscode"}, "commit_id": "a" * 40} for st in states])
     ok(approvals(pkg, "o/r", ["Thepluscode"], "C", seq("APPROVED", "DISMISSED"))[0] is False, "a dismissed approval still counted")
     ok(approvals(pkg, "o/r", ["Thepluscode"], "C", seq("APPROVED", "CHANGES_REQUESTED"))[0] is False, "a withdrawn approval still counted")
     ok(approvals(pkg, "o/r", ["Thepluscode"], "C", seq("CHANGES_REQUESTED", "APPROVED"))[0] is True, "a final approval was refused")
     other = lambda path: [{"number": 7}] if path.endswith("/pulls") else [{"state": "APPROVED", "user": {"login": "Thepluscode"}, "commit_id": "b" * 40}]
     ok(approvals(pkg, "o/r", ["Thepluscode"], "C", other)[0] is False, "an approval for a different commit counted")
+    nocommit = lambda path: [{"number": 7}] if path.endswith("/pulls") else [{"state": "APPROVED", "user": {"login": "Thepluscode"}}]
+    ok(approvals(pkg, "o/r", ["Thepluscode"], "C", nocommit)[0] is False, "an approval without commit_id counted")
     ok(approvals(pkg, "o/r", ["", "Thepluscode"], "C", seq("APPROVED"))[0] is True, "an empty approver element broke a valid list")
     def prs(path):  # PR 7: head c…, merge a… (= the package); PR 999: unrelated, approved
         if path == "repos/o/r/pulls/7": return {"head": {"sha": "c" * 40}, "merge_commit_sha": "a" * 40}
